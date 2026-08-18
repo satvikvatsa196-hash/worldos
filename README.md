@@ -8,6 +8,12 @@ The world contains characters, cities, factions, governments, resources, economi
 
 The user is primarily an OBSERVER, not a direct character controller.
 
+## Implemented Features
+
+- **Robust Persistence Layer**: Fully asynchronous SQLAlchemy 2.0 configuration with PostgreSQL, Redis, and a Unit of Work repository pattern.
+- **Core Domain Entities**: Complete modeling of `World`, `City`, `Character`, `Faction`, `Resource`, `Inventory`, `Relationship`, `Goal`, `Memory`, and `Event` ecosystems.
+- **Procedural World Generation**: A strictly deterministic, seed-based world generator that creates highly coherent starting states (tying character occupations to appropriate factions, relationships, and resource constraints). Accessible via the `POST /worlds/generate` API endpoint.
+
 ## Core Loop
 
 1. **WORLD STATE**

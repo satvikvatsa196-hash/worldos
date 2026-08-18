@@ -13,11 +13,15 @@ async def lifespan(app: FastAPI):
     await redis_client.close()
     await engine.dispose()
 
+from app.api.worlds import router as worlds_router
+
 app = FastAPI(
     title="WORLDOS", 
     description="Autonomous persistent world simulation powered by agentic AI",
     lifespan=lifespan
 )
+
+app.include_router(worlds_router)
 
 @app.get("/health")
 async def health_check():
