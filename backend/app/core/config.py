@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
+    # LLM Configuration
+    LLM_PROVIDER: str = "mock"
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
     
     @property
     def sync_database_url(self) -> str:
