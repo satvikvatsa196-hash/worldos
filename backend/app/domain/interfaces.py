@@ -40,3 +40,8 @@ class IEventRepository(IRepository[T], ABC):
     @abstractmethod
     async def get_by_world_and_tick(self, world_id: uuid.UUID, tick: int) -> List[T]:
         pass
+
+class IMemoryRepository(IRepository[T], ABC):
+    @abstractmethod
+    async def get_by_character_id(self, character_id: uuid.UUID) -> List[T]:
+        pass

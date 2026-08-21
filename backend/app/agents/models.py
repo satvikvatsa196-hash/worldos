@@ -17,6 +17,13 @@ class ActionType(str, Enum):
     OPPOSE_POLICY = "OPPOSE_POLICY"
     GIVE_MONEY = "GIVE_MONEY"
     REQUEST_HELP = "REQUEST_HELP"
+    RECRUIT = "RECRUIT"
+    FUND_PROTEST = "FUND_PROTEST"
+    ORGANIZE_STRIKE = "ORGANIZE_STRIKE"
+    FORM_ALLIANCE = "FORM_ALLIANCE"
+    COMPETE = "COMPETE"
+    DEPLOY_SECURITY = "DEPLOY_SECURITY"
+    THREATEN_STRIKE = "THREATEN_STRIKE"
     DO_NOTHING = "DO_NOTHING"
 
 class AgentAction(BaseModel):
@@ -34,7 +41,7 @@ class AgentContext(BaseModel):
     needs: Dict[str, Any]
     goals: List[Dict[str, Any]]
     relevant_memories: List[Dict[str, Any]]
-    beliefs: Dict[str, Any]
+    beliefs: List[Dict[str, Any]]
     nearby_entities: List[Dict[str, Any]]
     relationships: List[Dict[str, Any]]
     current_economic_conditions: Dict[str, Any]

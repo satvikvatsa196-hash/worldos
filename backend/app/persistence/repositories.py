@@ -3,8 +3,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.persistence.repository import BaseRepository
-from app.domain.interfaces import IWorldRepository, ICityRepository, ICharacterRepository, IEventRepository
-from app.infrastructure.models import World, City, Character, Event
+from app.domain.interfaces import IWorldRepository, ICityRepository, ICharacterRepository, IEventRepository, IMemoryRepository
+from app.infrastructure.models import World, City, Character, Event, Memory
 
 class WorldRepository(BaseRepository[World, uuid.UUID], IWorldRepository[World]):
     def __init__(self, session: AsyncSession):
@@ -39,5 +39,14 @@ class EventRepository(BaseRepository[Event, uuid.UUID], IEventRepository[Event])
 
     async def get_by_world_and_tick(self, world_id: uuid.UUID, tick: int) -> List[Event]:
         stmt = select(Event).where(Event.world_id == world_id, Event.tick == tick)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+class MemoryRepository(BaseRepository[Memory, uuid.UUID], IMemoryRepository[Memory]):
+    def __init__(self, session: AsyncSession):
+        super().__init__(session, Memory)
+
+    async def get_by_character_id(self, character_id: uuid.UUID) -> List[Memory]:
+        stmt = select(Memory).where(Memory.character_id == character_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

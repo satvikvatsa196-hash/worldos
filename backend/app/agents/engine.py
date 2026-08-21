@@ -73,7 +73,7 @@ class CharacterDecisionEngine:
             needs={"food": 0.5, "rest": 0.2}, # Mocked
             goals=goals,
             relevant_memories=memories,
-            beliefs={},
+            beliefs=[],
             nearby_entities=[],
             relationships=[],
             current_economic_conditions={},
@@ -171,3 +171,98 @@ class MemoryRetriever:
 class GoalEvaluator:
     def evaluate(self, character: Any) -> List[Dict[str, Any]]:
         return [{"type": "survival", "priority": 1}]
+
+class FactionDecisionEngine(CharacterDecisionEngine):
+    """
+    Engine responsible for orchestrating the faction decision loop.
+    Inherits from CharacterDecisionEngine to reuse the exact same architecture, 
+    but modifies the context building to represent a faction.
+    """
+    
+    def _build_context(self, faction: Any, world: Any) -> AgentContext:
+        """
+        Builds the agent context for a faction.
+        """
+        # Mocked perception for faction
+        # In reality, this would pull from Faction properties (wealth, power, influence, members, etc.)
+        perception = {
+            "wealth": getattr(faction, "wealth", 1000),
+            "power": getattr(faction, "power", 50),
+            "influence": getattr(faction, "influence", 50),
+            "ideology": getattr(faction, "ideology", "neutral"),
+            "member_count": len(getattr(faction, "members", [])),
+        }
+        
+        # Factions use the exact same AgentContext, we map faction goals/needs here
+        return AgentContext(
+            character_state=perception, # reusing character_state as the agent's state
+            needs={"funds": 0.5, "recruits": 0.8},
+            goals=[{"type": "expand_influence", "priority": 1}],
+            relevant_memories=[], 
+            beliefs=[], 
+            nearby_entities=[],
+            relationships=[], # Faction relationships
+            current_economic_conditions={},
+            recent_events=[]
+        )
+        
+    async def decide(
+        self, 
+        agent_id: uuid.UUID, 
+        world_id: uuid.UUID, 
+        current_tick: int, 
+        faction: Any = None,
+        world: Any = None
+    ) -> Optional[AgentAction]:
+        
+        context = self._build_context(faction, world)
+        
+        system_prompt = "You are a faction in a simulated world. Decide your next organizational action."
+        user_prompt = f"Context: {context.model_dump_json()}"
+        
+        response = await self.llm_provider.get_decision(system_prompt, user_prompt)
+        
+        if not response.is_success or not response.decision:
+            action = self._create_fallback_action(agent_id, "Fallback due to LLM provider failure.")
+            decision_summary = "LLM failure fallback"
+            confidence = 1.0
+            usage_dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            latency = response.metadata.latency_ms if response.metadata else 0.0
+        else:
+            decision = response.decision
+            try:
+                action_type = ActionType(decision.action.type)
+            except ValueError:
+                action_type = ActionType.DO_NOTHING
+                
+            action = AgentAction(
+                action_type=action_type,
+                actor_id=agent_id,
+                parameters=decision.action.parameters,
+                justification_summary=decision.decision_summary,
+                confidence=decision.confidence
+            )
+            decision_summary = decision.decision_summary
+            confidence = decision.confidence
+            usage_dict = response.metadata.usage.model_dump()
+            latency = response.metadata.latency_ms
+        
+        if not self.validator.validate(action, context):
+            action = self._create_fallback_action(agent_id, "Proposed action was invalid for current context.")
+            decision_summary = "Validation failure fallback"
+
+        record = DecisionRecord(
+            agent_id=agent_id,
+            world_id=world_id,
+            tick=current_tick,
+            decision_summary=decision_summary,
+            action=action,
+            confidence=confidence,
+            latency=latency,
+            token_usage=usage_dict
+        )
+        
+        await self.store.save(record)
+        self._last_decision_tick[agent_id] = current_tick
+        
+        return action

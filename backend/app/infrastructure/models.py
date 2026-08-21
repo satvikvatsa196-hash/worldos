@@ -79,6 +79,7 @@ class Character(Base):
     
     goals: Mapped[List["Goal"]] = relationship(back_populates="character", cascade="all, delete-orphan")
     memories: Mapped[List["Memory"]] = relationship(back_populates="character", cascade="all, delete-orphan")
+    beliefs: Mapped[List["Belief"]] = relationship(back_populates="character", cascade="all, delete-orphan")
     
     # Relationships where this character is source
     relationships_out: Mapped[List["Relationship"]] = relationship(
@@ -131,6 +132,7 @@ class Relationship(Base):
     friendship: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     hostility: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     influence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    obligation: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
     source_character: Mapped["Character"] = relationship(back_populates="relationships_out", foreign_keys=[source_character_id])
     target_character: Mapped["Character"] = relationship(back_populates="relationships_in", foreign_keys=[target_character_id])
@@ -164,6 +166,7 @@ class Memory(Base):
     importance: Mapped[float] = mapped_column(Float, nullable=False)
     tick: Mapped[int] = mapped_column(Integer, nullable=False)
     related_entities: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    source_event_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
 
     character: Mapped["Character"] = relationship(back_populates="memories")
 
@@ -203,3 +206,16 @@ class EconomicTransaction(Base):
 
     world: Mapped["World"] = relationship()
     resource: Mapped["Resource"] = relationship()
+
+class Belief(Base):
+    __tablename__ = "beliefs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    character_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    subject_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    subject_type: Mapped[str] = mapped_column(String, nullable=False) 
+    belief_type: Mapped[str] = mapped_column(String, nullable=False) 
+    value: Mapped[float] = mapped_column(Float, nullable=False) 
+    confidence: Mapped[float] = mapped_column(Float, nullable=False) 
+
+    character: Mapped["Character"] = relationship(back_populates="beliefs")
