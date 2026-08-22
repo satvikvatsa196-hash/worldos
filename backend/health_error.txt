@@ -1,0 +1,1 @@
+{'detail': {'status': 'error', 'service': 'WORLDOS', 'database': 'ok', 'redis': 'error: Event loop is closed'}}

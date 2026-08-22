@@ -3,14 +3,28 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import declarative_base
 from app.core.config import settings
 
+import sys
+from sqlalchemy.pool import NullPool, QueuePool
+
+is_testing = "pytest" in sys.modules
+
+engine_kwargs = {
+    "echo": False,
+    "future": True,
+    "pool_pre_ping": True,
+}
+
+if is_testing:
+    engine_kwargs["poolclass"] = NullPool
+else:
+    engine_kwargs["poolclass"] = QueuePool
+    engine_kwargs["pool_size"] = 5
+    engine_kwargs["max_overflow"] = 10
+
 # Create async engine with connection pooling
 engine = create_async_engine(
     settings.async_database_url,
-    echo=False,
-    future=True,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
+    **engine_kwargs
 )
 
 # Async session factory

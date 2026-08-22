@@ -1,0 +1,5 @@
+Tick 1: Event RESOURCE_SHORTAGE Triggered by World
+Tick 1: Event PRICE_CHANGED Triggered by acc1209d-0d94-400b-965e-3fb4fb713ce3
+Tick 2: Event PROTEST Triggered by 8b68bcaf-c9e5-44e3-a4bc-bf92bcbe1233
+Tick 3: Event FACTION_ACTION Triggered by fd6e2e26-50b8-4e16-a181-8d076f5c0c26
+Tick 4: Event POLITICAL_CHANGE Triggered by 16050323-ac37-4506-b8a2-f9b56d4c7320

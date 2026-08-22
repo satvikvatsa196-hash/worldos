@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 from app.infrastructure.database import engine
 from app.infrastructure.redis_client import redis_client
+from app.api.worlds import router as worlds_router
+from app.api.ws import router as ws_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -13,8 +15,6 @@ async def lifespan(app: FastAPI):
     await redis_client.close()
     await engine.dispose()
 
-from app.api.worlds import router as worlds_router
-
 app = FastAPI(
     title="WORLDOS", 
     description="Autonomous persistent world simulation powered by agentic AI",
@@ -22,6 +22,7 @@ app = FastAPI(
 )
 
 app.include_router(worlds_router)
+app.include_router(ws_router)
 
 @app.get("/health")
 async def health_check():

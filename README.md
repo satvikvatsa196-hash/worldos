@@ -28,6 +28,9 @@ The user is primarily an OBSERVER, not a direct character controller.
 - **Dynamic Relationships**: An organic social web tracking trust, respect, friendship, hostility, influence, and obligation. Relationships evolve deterministically based on agent interactions (e.g., helping during a crisis spikes obligation, while betrayal spikes hostility).
 - **Faction Simulation**: Organizations (Factions) operate as macro-agents using the exact same decision engine architecture. Factions perceive their wealth, power, and ideology, proposing macro-level actions like recruiting, funding protests, or forming alliances.
 - **Deterministic Political Engine**: A policy-driven government simulation handling taxes, wages, subsidies, military spending, and market regulations. The engine calculates citizen approval, stability, and security capacity strictly without randomness—predictably triggering events like protests or strikes when conditions deteriorate or opposing factions exert pressure.
+- **World Lifecycle Management**: API-driven controls for starting, pausing, and advancing the simulation. Features a non-mutating world cloning architecture that automatically untangles and remaps complex circular dependencies (like Faction leaders), allowing users to branch historical scenarios natively in the database.
+- **Real-time Event Streaming**: A resilient WebSockets layer backed by Redis pub-sub. Selectively broadcasts incremental domain events (e.g., market crashes, character actions, protests) to connected clients in real-time, completely bypassing the need to poll massive full-world state payloads.
+- **Robust Quality & Determinism**: A meticulously calibrated testing framework that guarantees 100% deterministic, deadlock-free integration tests across asynchronous boundaries. Proactively prevents PostgreSQL connection pool deadlocks and strictly isolates async event loops to ensure high reliability across operating systems.
 
 ## Core Loop
 

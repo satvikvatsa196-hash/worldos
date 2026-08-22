@@ -16,11 +16,18 @@ AsyncSessionFactory = async_sessionmaker(engine, expire_on_commit=False, class_=
 
 @pytest_asyncio.fixture(autouse=True)
 async def setup_database():
+    print("\n[test_executor] Setting up DB...", flush=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    print("\n[test_executor] Tearing down DB... (drop_all)", flush=True)
+    try:
+        await engine.dispose() # Force dispose any lingering connections
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        print("[test_executor] Teardown complete!", flush=True)
+    except Exception as e:
+        print(f"[test_executor] Teardown ERROR: {e}", flush=True)
 
 @pytest_asyncio.fixture
 async def session():
@@ -194,3 +201,5 @@ async def test_successful_buy_and_sell(session, seed_data):
     assert result2.status == ExecutionStatus.SUCCESS
     await session.refresh(char)
     assert char.wealth == 70.0 # 50 + 20
+    
+    await session.commit() # Ensure transaction is cleanly ended

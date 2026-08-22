@@ -9,7 +9,17 @@ from app.agents.models import AgentContext, AgentDecision, AgentAction, ActionTy
 from app.agents.interfaces import DecisionProvider, ActionValidator
 from app.llm.provider import LLMProvider
 from app.llm.models import LLMResponse, LLMDecisionOutput, LLMActionSchema, LLMMetadata, LLMUsage
+import asyncio
 
+@pytest_asyncio.fixture(autouse=True, scope="module")
+async def debug_print():
+    print("\n\n>>> STARTING MODULE test_faction_agents.py <<<", flush=True)
+    tasks = asyncio.all_tasks()
+    print(f">>> RUNNING TASKS: {len(tasks)}", flush=True)
+    for t in tasks:
+        print(f"Task: {t.get_coro()}", flush=True)
+    yield
+    print("\n\n>>> ENDING MODULE test_faction_agents.py <<<", flush=True)
 class MockLLMProvider(LLMProvider):
     async def get_decision(self, system_prompt: str, user_prompt: str) -> LLMResponse:
         return LLMResponse(

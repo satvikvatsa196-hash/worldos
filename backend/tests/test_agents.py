@@ -13,7 +13,7 @@ def base_context():
         needs={"food": 0.8},
         goals=[{"type": "survive"}],
         relevant_memories=[],
-        beliefs={},
+        beliefs=[],
         nearby_entities=[],
         relationships=[],
         current_economic_conditions={"food_price": 2.0},

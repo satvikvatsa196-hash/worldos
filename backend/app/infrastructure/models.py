@@ -22,6 +22,7 @@ class World(Base):
     factions: Mapped[List["Faction"]] = relationship(back_populates="world", cascade="all, delete-orphan")
     resources: Mapped[List["Resource"]] = relationship(back_populates="world", cascade="all, delete-orphan")
     events: Mapped[List["Event"]] = relationship(back_populates="world", cascade="all, delete-orphan")
+    decisions: Mapped[List["AgentDecisionRecord"]] = relationship(back_populates="world", cascade="all, delete-orphan")
 
 
 class City(Base):
@@ -80,14 +81,13 @@ class Character(Base):
     goals: Mapped[List["Goal"]] = relationship(back_populates="character", cascade="all, delete-orphan")
     memories: Mapped[List["Memory"]] = relationship(back_populates="character", cascade="all, delete-orphan")
     beliefs: Mapped[List["Belief"]] = relationship(back_populates="character", cascade="all, delete-orphan")
+    decisions: Mapped[List["AgentDecisionRecord"]] = relationship(back_populates="character", cascade="all, delete-orphan")
     
-    # Relationships where this character is source
     relationships_out: Mapped[List["Relationship"]] = relationship(
         back_populates="source_character",
         foreign_keys="[Relationship.source_character_id]",
         cascade="all, delete-orphan"
     )
-    # Relationships where this character is target
     relationships_in: Mapped[List["Relationship"]] = relationship(
         back_populates="target_character",
         foreign_keys="[Relationship.target_character_id]",
@@ -113,7 +113,7 @@ class Inventory(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    owner_type: Mapped[str] = mapped_column(String, nullable=False) # 'character', 'city', 'faction'
+    owner_type: Mapped[str] = mapped_column(String, nullable=False)
     resource_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("resources.id", ondelete="CASCADE"), nullable=False)
     quantity: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
@@ -219,3 +219,20 @@ class Belief(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False) 
 
     character: Mapped["Character"] = relationship(back_populates="beliefs")
+
+class AgentDecisionRecord(Base):
+    __tablename__ = "agent_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("characters.id", ondelete="CASCADE"), nullable=False)
+    world_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("worlds.id", ondelete="CASCADE"), nullable=False)
+    tick: Mapped[int] = mapped_column(Integer, nullable=False)
+    decision_summary: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    latency: Mapped[float] = mapped_column(Float, nullable=False)
+    token_usage: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    world: Mapped["World"] = relationship(back_populates="decisions")
+    character: Mapped["Character"] = relationship(back_populates="decisions")
