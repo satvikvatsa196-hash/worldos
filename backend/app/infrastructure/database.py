@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base
 from app.core.config import settings
 
 import sys
-from sqlalchemy.pool import NullPool, QueuePool
+from sqlalchemy.pool import NullPool
 
 is_testing = "pytest" in sys.modules
 
@@ -17,7 +17,7 @@ engine_kwargs = {
 if is_testing:
     engine_kwargs["poolclass"] = NullPool
 else:
-    engine_kwargs["poolclass"] = QueuePool
+    # Let create_async_engine use its default AsyncAdaptedQueuePool
     engine_kwargs["pool_size"] = 5
     engine_kwargs["max_overflow"] = 10
 

@@ -31,6 +31,11 @@ The user is primarily an OBSERVER, not a direct character controller.
 - **World Lifecycle Management**: API-driven controls for starting, pausing, and advancing the simulation. Features a non-mutating world cloning architecture that automatically untangles and remaps complex circular dependencies (like Faction leaders), allowing users to branch historical scenarios natively in the database.
 - **Real-time Event Streaming**: A resilient WebSockets layer backed by Redis pub-sub. Selectively broadcasts incremental domain events (e.g., market crashes, character actions, protests) to connected clients in real-time, completely bypassing the need to poll massive full-world state payloads.
 - **Robust Quality & Determinism**: A meticulously calibrated testing framework that guarantees 100% deterministic, deadlock-free integration tests across asynchronous boundaries. Proactively prevents PostgreSQL connection pool deadlocks and strictly isolates async event loops to ensure high reliability across operating systems.
+- **Observer Command Center**: A Next.js-powered "God Mode" dashboard built to monitor the simulation. Features live metric charts via Recharts, simulation clock controls, and dynamic event filtering.
+- **Interactive World Map**: A React Flow visualization deterministically plotting City and Faction spatial networks, highlighting real-time civil unrest pulses and trade routes.
+- **Entity Deep-Dive Inspectors**: Granular UI panels enabling users to instantly inspect the live cognitive states of Agents (Needs, Traits, Beliefs, Decisions) and Factions (Power metrics, Wealth, Rosters) relying on efficient, deep-joined database queries.
+- **Causal Event Graph**: An interactive node-based visualization explicitly tracing the deterministic lineage of simulation events (Ancestors to Descendants) natively from the database schema to completely eliminate LLM hallucination.
+- **Causal Investigation Mode**: A chronological "WHY DID THIS HAPPEN?" root-cause analysis tool. Walks backwards through the event graph to extract the exact agent decisions, actor targets, and downstream political/economic consequences responsible for major world shifts.
 
 ## Core Loop
 

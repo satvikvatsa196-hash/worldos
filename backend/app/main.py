@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from sqlalchemy import text
 from app.infrastructure.database import engine
@@ -19,6 +20,14 @@ app = FastAPI(
     title="WORLDOS", 
     description="Autonomous persistent world simulation powered by agentic AI",
     lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Since it's a local simulation, open to all for now
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(worlds_router)
