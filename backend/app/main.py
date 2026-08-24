@@ -6,9 +6,11 @@ from app.infrastructure.database import engine
 from app.infrastructure.redis_client import redis_client
 from app.api.worlds import router as worlds_router
 from app.api.ws import router as ws_router
+from app.core.telemetry import setup_telemetry, metrics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_telemetry()
     # Startup actions
     await redis_client.connect()
     yield
@@ -32,6 +34,10 @@ app.add_middleware(
 
 app.include_router(worlds_router)
 app.include_router(ws_router)
+
+@app.get("/metrics")
+async def get_metrics():
+    return metrics.get_metrics()
 
 @app.get("/health")
 async def health_check():

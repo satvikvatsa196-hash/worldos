@@ -116,7 +116,7 @@ class ContextAwareDecisionEngine(CharacterDecisionEngine):
             recent_events=[]
         )
 
-    async def decide(self, agent_id: uuid.UUID, world_id: uuid.UUID, current_tick: int, character: Any = None, world: Any = None) -> Optional[AgentAction]:
+    async def decide(self, agent_id: uuid.UUID, world_id: uuid.UUID, current_tick: int, character: Any = None, world: Any = None) -> Any:
         return await super().decide(agent_id, world_id, current_tick, character=agent_id, world=world)
 
 @pytest.mark.asyncio

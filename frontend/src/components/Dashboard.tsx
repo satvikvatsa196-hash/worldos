@@ -10,11 +10,25 @@ import {
 import { TopPanel } from "./TopPanel";
 import { MainView } from "./MainView";
 import { BottomPanel } from "./BottomPanel";
+import { InterventionPanel } from "./InterventionPanel";
+import { CounterfactualComparison } from "./CounterfactualComparison";
 
-export function Dashboard({ world }: { world: any }) {
+export function Dashboard({ 
+  world, 
+  allWorlds, 
+  onSelectWorld, 
+  onRefreshWorlds 
+}: { 
+  world: any, 
+  allWorlds: any[], 
+  onSelectWorld: (w: any) => void,
+  onRefreshWorlds: () => void 
+}) {
   const [worldState, setWorldState] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<any>(null);
+  const [showInterventions, setShowInterventions] = useState(false);
+  const [comparingWorldId, setComparingWorldId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   const loadData = async () => {
@@ -74,20 +88,47 @@ export function Dashboard({ world }: { world: any }) {
           await controlSimulation(world.id, action);
           loadData();
         }}
+        onIntervene={() => setShowInterventions(!showInterventions)}
+        allWorlds={allWorlds}
+        onSelectWorld={onSelectWorld}
+        onRefreshWorlds={onRefreshWorlds}
+        onCompare={(targetId) => setComparingWorldId(targetId)}
+        isComparing={!!comparingWorldId}
       />
       
-      <div className="flex-1 flex overflow-hidden">
-        <MainView 
-          worldState={worldState} 
-          timeline={timeline}
+      {showInterventions && !comparingWorldId && (
+        <InterventionPanel 
+          worldId={world.id}
+          worldState={worldState}
           selectedEntity={selectedEntity}
-          onSelectEntity={setSelectedEntity}
+          onClose={() => setShowInterventions(false)}
         />
-      </div>
+      )}
+      
+      {comparingWorldId ? (
+        <div className="flex-1 overflow-hidden relative">
+          <CounterfactualComparison 
+            baseWorldId={world.id} 
+            targetWorldId={comparingWorldId} 
+            onClose={() => setComparingWorldId(null)}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="flex-1 flex overflow-hidden">
+            <MainView 
+              worldState={worldState} 
+              timeline={timeline}
+              selectedEntity={selectedEntity}
+              onSelectEntity={setSelectedEntity}
+            />
+          </div>
 
-      <div className="h-64 border-t border-zinc-800 bg-zinc-950 p-4">
-        <BottomPanel worldState={worldState} />
-      </div>
+          <div className="h-64 border-t border-zinc-800 bg-zinc-950 p-4">
+            <BottomPanel worldState={worldState} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

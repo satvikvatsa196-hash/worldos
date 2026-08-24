@@ -5,9 +5,9 @@ from app.infrastructure.redis_client import redis_client
 from app.infrastructure.database import AsyncSessionFactory
 from sqlalchemy import select
 from app.infrastructure.models import World
-import logging
+from app.core.telemetry import TraceLogger, metrics
 
-logger = logging.getLogger(__name__)
+logger = TraceLogger(__name__)
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
@@ -29,12 +29,14 @@ class ConnectionManager:
         if world_id not in self.active_connections:
             self.active_connections[world_id] = []
         self.active_connections[world_id].append(websocket)
+        metrics.inc_gauge("websocket_connections", 1)
         return True
         
     def disconnect(self, websocket: WebSocket, world_id: uuid.UUID):
         if world_id in self.active_connections:
             if websocket in self.active_connections[world_id]:
                 self.active_connections[world_id].remove(websocket)
+                metrics.inc_gauge("websocket_connections", -1)
             if not self.active_connections[world_id]:
                 del self.active_connections[world_id]
 

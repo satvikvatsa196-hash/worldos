@@ -21,6 +21,7 @@ class EventType(str, Enum):
     CONFLICT = "CONFLICT"
     DEATH = "DEATH"
     POLITICAL_CHANGE = "POLITICAL_CHANGE"
+    INTERVENTION = "INTERVENTION"
 
 class WorldEvent(BaseModel):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)

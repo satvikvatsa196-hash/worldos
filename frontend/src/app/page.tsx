@@ -61,5 +61,12 @@ export default function Home() {
     );
   }
 
-  return <Dashboard world={selectedWorld} />;
+  return (
+    <Dashboard 
+      world={selectedWorld} 
+      allWorlds={worlds} 
+      onSelectWorld={(w: any) => setSelectedWorld(w)} 
+      onRefreshWorlds={loadWorlds}
+    />
+  );
 }

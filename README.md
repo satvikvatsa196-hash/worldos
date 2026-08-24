@@ -36,6 +36,12 @@ The user is primarily an OBSERVER, not a direct character controller.
 - **Entity Deep-Dive Inspectors**: Granular UI panels enabling users to instantly inspect the live cognitive states of Agents (Needs, Traits, Beliefs, Decisions) and Factions (Power metrics, Wealth, Rosters) relying on efficient, deep-joined database queries.
 - **Causal Event Graph**: An interactive node-based visualization explicitly tracing the deterministic lineage of simulation events (Ancestors to Descendants) natively from the database schema to completely eliminate LLM hallucination.
 - **Causal Investigation Mode**: A chronological "WHY DID THIS HAPPEN?" root-cause analysis tool. Walks backwards through the event graph to extract the exact agent decisions, actor targets, and downstream political/economic consequences responsible for major world shifts.
+- **World-Level Interventions**: Tools for the Observer to inject shocks (e.g., Drought, Resource Shortage, Tax Change, Embargo) directly into the simulation, triggering verifiable downstream consequences without direct character control.
+- **Counterfactual Branching**: An advanced cloning architecture allowing the Observer to pause a timeline, modify a specific variable, and run an alternate reality side-by-side to safely test "what-if" scenarios.
+- **Agent System Hardening**: Comprehensive fault-tolerance handling LLM rate limits, timeouts, context overflows, and invalid JSON schemas, utilizing rigorous deterministic fallback logic to ensure the simulation never freezes.
+- **Cost & Performance Optimization**: A highly optimized Agent Scheduler prioritizing decisions based on urgency and cooldowns, event-driven wakeups, and relevant-memory context minimization to drastically slash LLM call volumes and costs.
+- **Simulation Observability**: A robust telemetry framework injecting trace metadata across all operations, complete with a centralized metrics registry tracking simulation throughput, API latency, tokens, cost, and database performance.
+- **Invariant Test Suite**: An end-to-end continuous validation pipeline running deterministically (via Mock LLMs) to guarantee critical domain invariants like 100% money and resource conservation across deep event cascades.
 
 ## Core Loop
 

@@ -11,6 +11,24 @@ from app.agents.mock import MockActionValidator
 from app.llm.mock import MockLLMProvider
 from app.llm.models import LLMResponse, LLMDecisionOutput, LLMActionSchema, LLMMetadata
 from app.agents.executor import ActionExecutionEngine, ExecutionStatus, ActionExecutionResult
+from app.core.telemetry import metrics
+
+@pytest.fixture(autouse=True)
+def reset_metrics():
+    metrics.counters.clear()
+    metrics.counters.update({
+        "simulation_ticks": 0,
+        "agent_decisions_success": 0,
+        "agent_decisions_failed": 0,
+        "agent_decisions_fallback": 0,
+        "llm_calls": 0,
+        "llm_failures": 0,
+        "llm_tokens": 0,
+        "events_emitted": 0,
+        "actions_rejected": 0,
+        "actions_executed": 0,
+        "llm_calls_saved": 0
+    })
 
 class MockDecisionStore:
     async def save(self, record):
@@ -81,8 +99,8 @@ async def test_scheduler_cooldown_and_skip(scheduler):
     
     await scheduler.run_tick(world_id, 2)
     
-    assert scheduler.metrics["agents_skipped"] == 1
-    assert scheduler.metrics["agents_evaluated"] == 0
+    assert metrics.counters["llm_calls_saved"] >= 1
+    assert metrics.counters["agent_decisions_success"] == 0
     assert agent_id not in scheduler.queued_agents 
 
 @pytest.mark.asyncio
@@ -107,10 +125,10 @@ async def test_scheduler_execution_and_metrics(store, event_bus):
     
     await scheduler.run_tick(world_id, 1)
     
-    assert scheduler.metrics["agents_evaluated"] == 1
-    assert scheduler.metrics["llm_calls"] == 1
-    assert scheduler.metrics["decisions_executed"] == 1
-    assert scheduler.metrics["actions_rejected"] == 0
+    assert metrics.counters["agent_decisions_success"] == 1
+    assert metrics.counters["llm_calls"] == 1
+    assert metrics.counters["actions_executed"] == 1
+    assert metrics.counters["actions_rejected"] == 0
     
     assert scheduler.last_decision_tick[agent_id] == 1
     assert len(executor.executed_actions) == 1
@@ -131,9 +149,9 @@ async def test_scheduler_retry_on_failure(store, event_bus):
     
     await scheduler.run_tick(world_id, 1)
     
-    assert scheduler.metrics["agents_evaluated"] == 1
-    assert scheduler.metrics["actions_rejected"] == 1
-    assert scheduler.metrics["decisions_executed"] == 0
+    assert (metrics.counters["agent_decisions_failed"] + metrics.counters["agent_decisions_fallback"]) == 1
+    assert metrics.counters["actions_rejected"] == 1
+    assert metrics.counters["actions_executed"] == 0
     
     assert agent_id in scheduler.queued_agents
     assert len(scheduler.queue) == 1
@@ -154,7 +172,7 @@ async def test_scheduler_concurrency_limit(decision_engine, event_bus):
     
     await scheduler.run_tick(world_id, 1)
     
-    assert scheduler.metrics["agents_evaluated"] == 2
+    assert metrics.counters["agent_decisions_success"] == 2
     assert len(scheduler.queue) == 3
 
 @pytest.mark.asyncio

@@ -1,7 +1,10 @@
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
+from sqlalchemy import event
 from app.core.config import settings
+from app.core.telemetry import metrics
+import time
 
 import sys
 from sqlalchemy.pool import NullPool
@@ -26,6 +29,15 @@ engine = create_async_engine(
     settings.async_database_url,
     **engine_kwargs
 )
+
+@event.listens_for(engine.sync_engine, "before_cursor_execute")
+def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    context._query_start_time = time.time()
+
+@event.listens_for(engine.sync_engine, "after_cursor_execute")
+def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    total = time.time() - context._query_start_time
+    metrics.observe_latency("db_latency", total * 1000.0)
 
 # Async session factory
 AsyncSessionFactory = async_sessionmaker(

@@ -74,7 +74,7 @@ async def test_faction_decision_engine():
     world_id = uuid.uuid4()
     
     # Run decision loop
-    action = await engine.decide(
+    action, record = await engine.decide(
         agent_id=faction.id,
         world_id=world_id,
         current_tick=1,

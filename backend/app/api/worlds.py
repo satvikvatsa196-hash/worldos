@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from pydantic import BaseModel, Field
+from enum import Enum
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, delete
+from sqlalchemy import select, desc, delete, func
 from sqlalchemy.orm import selectinload, make_transient
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 import uuid
 
 from app.infrastructure.database import get_db_session
@@ -12,6 +13,32 @@ from app.infrastructure.models import (
     World, Event, City, Character, Faction, Resource, Inventory, Relationship, Goal, Memory, EconomicTransaction, Belief, AgentDecisionRecord
 )
 from app.domain.simulation.engine import SimulationEngine
+from app.core.telemetry import metrics, TraceLogger
+import time
+
+logger = TraceLogger(__name__)
+
+class InterventionType(str, Enum):
+    DROUGHT = "drought"
+    RESOURCE_SHORTAGE = "resource_shortage"
+    CHANGE_TAX = "change_tax"
+    SUBSIDY = "subsidy"
+    EMBARGO = "embargo"
+    CHANGE_POLICY = "change_policy"
+    INJECT_RESOURCES = "inject_resources"
+    REMOVE_RESOURCES = "remove_resources"
+    TRIGGER_ELECTION = "trigger_election"
+    TRADE_DISRUPTION = "trade_disruption"
+
+class InterventionRequest(BaseModel):
+    type: InterventionType
+    target_id: Optional[uuid.UUID] = None
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+class InterventionResponse(BaseModel):
+    status: str
+    event_id: uuid.UUID
+    message: str
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
 
@@ -248,6 +275,9 @@ async def tick_simulation(world_id: uuid.UUID, db: AsyncSession = Depends(get_db
     db.add_all(db_events)
     await db.commit()
     
+    metrics.inc_counter("simulation_ticks", 1)
+    logger.info("Simulation tick advanced", world_id=str(world.id), tick=world.current_tick)
+    
     return SimulationResponse(world_id=world.id, current_tick=world.current_tick, status=world.simulation_status)
 
 @router.post("/{world_id}/simulation/advance", response_model=SimulationResponse)
@@ -272,6 +302,9 @@ async def advance_simulation(world_id: uuid.UUID, request: AdvanceSimulationRequ
         ))
     db.add_all(db_events)
     await db.commit()
+    
+    metrics.inc_counter("simulation_ticks", request.ticks)
+    logger.info("Simulation ticks advanced", world_id=str(world.id), tick=world.current_tick, ticks_advanced=request.ticks)
     
     return SimulationResponse(world_id=world.id, current_tick=world.current_tick, status=world.simulation_status)
 
@@ -347,8 +380,7 @@ async def delete_world(world_id: uuid.UUID, db: AsyncSession = Depends(get_db_se
     await db.commit()
     return {"status": "success", "message": f"World {world_id} deleted."}
 
-@router.post("/{world_id}/clone", response_model=GenerateWorldResponse)
-async def clone_world(world_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+async def _clone_world(world_id: uuid.UUID, db: AsyncSession, is_counterfactual: bool = False):
     # To clone a world without mutating the original, we load it deeply and duplicate instances.
     result = await db.execute(
         select(World)
@@ -383,7 +415,11 @@ async def clone_world(world_id: uuid.UUID, db: AsyncSession = Depends(get_db_ses
     old_world_id = world.id
     new_world_id = uuid.uuid4()
     world.id = new_world_id
-    world.name = f"{world.name} (Clone)"
+    if is_counterfactual:
+        world.name = f"{world.name} (Counterfactual)"
+        world.seed = f"{world.seed}|CF:{old_world_id}"
+    else:
+        world.name = f"{world.name} (Clone)"
     
     # 2. Clone Cities
     new_cities = []
@@ -493,7 +529,17 @@ async def clone_world(world_id: uuid.UUID, db: AsyncSession = Depends(get_db_ses
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Clone failed: {e}")
         
-    return GenerateWorldResponse(world_id=new_world_id, summary=f"Cloned world successfully to tick {world.current_tick}")
+    return new_world_id, world.current_tick
+
+@router.post("/{world_id}/clone", response_model=GenerateWorldResponse)
+async def clone_world(world_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    new_world_id, tick = await _clone_world(world_id, db)
+    return GenerateWorldResponse(world_id=new_world_id, summary=f"Cloned world successfully to tick {tick}")
+
+@router.post("/{world_id}/counterfactual", response_model=GenerateWorldResponse)
+async def create_counterfactual(world_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    new_world_id, tick = await _clone_world(world_id, db, is_counterfactual=True)
+    return GenerateWorldResponse(world_id=new_world_id, summary=f"Counterfactual created successfully at tick {tick}")
 
 @router.get("/{world_id}/characters/{character_id}")
 async def get_character_details(world_id: uuid.UUID, character_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
@@ -661,4 +707,116 @@ async def get_event_causal_chain(world_id: uuid.UUID, event_id: uuid.UUID, db: A
         "descendants": descendants
     }
 
+@router.post("/{world_id}/interventions", response_model=InterventionResponse)
+async def create_intervention(
+    world_id: uuid.UUID,
+    request: InterventionRequest,
+    db: AsyncSession = Depends(get_db_session)
+):
+    result = await db.execute(select(World).where(World.id == world_id))
+    world = result.scalars().first()
+    if not world:
+        raise HTTPException(status_code=404, detail="World not found")
+        
+    if request.type in [InterventionType.INJECT_RESOURCES, InterventionType.REMOVE_RESOURCES, InterventionType.CHANGE_TAX, InterventionType.SUBSIDY, InterventionType.EMBARGO, InterventionType.TRIGGER_ELECTION]:
+        if not request.target_id:
+            raise HTTPException(status_code=400, detail=f"target_id is required for intervention type {request.type.value}")
+            
+    # Validate target exists if target_id is provided
+    if request.target_id:
+        # Check if target is a city, faction, or character
+        city_res = await db.execute(select(City).where(City.id == request.target_id).where(City.world_id == world_id))
+        faction_res = await db.execute(select(Faction).where(Faction.id == request.target_id).where(Faction.world_id == world_id))
+        char_res = await db.execute(select(Character).where(Character.id == request.target_id).where(Character.world_id == world_id))
+        resource_res = await db.execute(select(Resource).where(Resource.id == request.target_id).where(Resource.world_id == world_id))
+        
+        target = city_res.scalars().first() or faction_res.scalars().first() or char_res.scalars().first() or resource_res.scalars().first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Target not found in this world")
+    
+    evt = Event(
+        world_id=world_id,
+        tick=world.current_tick,
+        type="INTERVENTION",
+        actor_id=None,
+        target_id=request.target_id,
+        payload={
+            "intervention_type": request.type.value,
+            **request.payload
+        }
+    )
+    db.add(evt)
+    await db.commit()
+    
+    return InterventionResponse(
+        status="success", 
+        event_id=evt.id, 
+        message=f"Intervention '{request.type.value}' successfully injected into simulation timeline."
+    )
 
+@router.get("/{world_id}/compare/{target_world_id}")
+async def compare_worlds(world_id: uuid.UUID, target_world_id: uuid.UUID, db: AsyncSession = Depends(get_db_session)):
+    async def get_metrics(wid: uuid.UUID):
+        # Resource prices (grain)
+        res = await db.execute(select(func.avg(Resource.current_price)).where(Resource.world_id == wid).where(func.lower(Resource.name) == 'grain'))
+        grain_price = res.scalar() or 0.0
+        
+        # Food supply and unrest
+        res = await db.execute(select(func.sum(City.food_supply), func.avg(City.unrest)).where(City.world_id == wid))
+        food_supply, unrest = res.fetchone() or (0.0, 0.0)
+        
+        # Wealth
+        res = await db.execute(select(func.sum(Character.wealth)).where(Character.world_id == wid))
+        char_wealth = res.scalar() or 0.0
+        res = await db.execute(select(func.sum(City.wealth)).where(City.world_id == wid))
+        city_wealth = res.scalar() or 0.0
+        wealth = char_wealth + city_wealth
+        
+        # Government approval (using city stability as proxy)
+        res = await db.execute(select(func.avg(City.stability)).where(City.world_id == wid))
+        gov_approval = res.scalar() or 0.0
+        
+        # Trade volume
+        res = await db.execute(select(func.sum(EconomicTransaction.total_value)).where(EconomicTransaction.world_id == wid))
+        trade_volume = res.scalar() or 0.0
+        
+        # Faction influence
+        res = await db.execute(select(func.sum(Faction.power)).where(Faction.world_id == wid))
+        faction_influence = res.scalar() or 0.0
+        
+        # Population movement (MIGRATION events)
+        res = await db.execute(select(func.count(Event.id)).where(Event.world_id == wid).where(Event.type == 'MIGRATION'))
+        pop_movement = res.scalar() or 0
+        
+        # Major events
+        res = await db.execute(select(Event).where(Event.world_id == wid).where(Event.type.in_(['CONFLICT', 'PROTEST', 'POLITICAL_CHANGE', 'INTERVENTION'])).order_by(desc(Event.tick)).limit(10))
+        major_events = [{"id": e.id, "tick": e.tick, "type": e.type, "payload": e.payload} for e in res.scalars().all()]
+        
+        # Name and tick
+        res = await db.execute(select(World).where(World.id == wid))
+        w = res.scalars().first()
+        name = w.name if w else "Unknown"
+        tick = w.current_tick if w else 0
+        
+        return {
+            "id": wid,
+            "name": name,
+            "tick": tick,
+            "grain_price": float(grain_price or 0.0),
+            "food_supply": float(food_supply or 0.0),
+            "wealth": float(wealth or 0.0),
+            "unrest": float(unrest or 0.0),
+            "government_approval": float(gov_approval or 0.0),
+            "trade_volume": float(trade_volume or 0.0),
+            "faction_influence": float(faction_influence or 0.0),
+            "population_movement": int(pop_movement or 0),
+            "major_events": major_events
+        }
+        
+    original = await get_metrics(world_id)
+    counterfactual = await get_metrics(target_world_id)
+    
+    return {
+        "original": original,
+        "counterfactual": counterfactual
+    }

@@ -10,6 +10,9 @@ from app.domain.event.bus import EventBus
 from app.agents.engine import CharacterDecisionEngine
 from app.agents.models import ActionType, AgentAction
 from app.agents.executor import ActionExecutionEngine, ExecutionStatus
+from app.core.telemetry import TraceLogger, metrics
+
+logger = TraceLogger(__name__)
 
 @dataclass(order=True)
 class WakeupTask:
@@ -35,18 +38,7 @@ class AgentScheduler:
         self.queue: List[WakeupTask] = []
         self.queued_agents: Set[uuid.UUID] = set()
         
-        # Tracking metrics
-        self.metrics = {
-            "agents_evaluated": 0,
-            "agents_skipped": 0,
-            "llm_calls": 0,
-            "decisions_executed": 0,
-            "actions_rejected": 0
-        }
-        
         self.last_decision_tick: Dict[uuid.UUID, int] = {}
-        
-        # Agent metadata cache for filtering relevant agents
         self.agent_metadata: Dict[uuid.UUID, Dict[str, Any]] = {}
 
         self._setup_event_subscriptions()
@@ -138,7 +130,7 @@ class AgentScheduler:
             if self.can_run(task.agent_id, current_tick, task.urgency):
                 tasks_to_run.append(task)
             else:
-                self.metrics["agents_skipped"] += 1
+                metrics.inc_counter("llm_calls_saved")
                 
         if not tasks_to_run:
             return
@@ -171,37 +163,43 @@ class AgentScheduler:
             if self.action_executor:
                 exec_result = await self.action_executor.execute(action, world_id, current_tick)
                 if exec_result.status == ExecutionStatus.SUCCESS:
-                    self.metrics["decisions_executed"] += 1
-                    # Event generation and consequence trigger via EventBus
+                    metrics.inc_counter("actions_executed")
                     for event in exec_result.events_generated:
+                        metrics.inc_counter("events_emitted")
                         await self.event_bus.publish(event)
                 else:
-                    self.metrics["actions_rejected"] += 1
+                    metrics.inc_counter("actions_rejected")
             else:
-                # If no executor is provided (e.g. in some isolated tests), assume success
-                self.metrics["decisions_executed"] += 1
+                metrics.inc_counter("actions_executed")
 
     async def evaluate_agent(self, task: WakeupTask, world_id: uuid.UUID, current_tick: int) -> Tuple[WakeupTask, Optional[AgentAction], bool]:
-        self.metrics["agents_evaluated"] += 1
-        self.metrics["llm_calls"] += 1
-        
         try:
-            action = await self.decision_engine.decide(task.agent_id, world_id, current_tick)
-            
+            action, record = await self.decision_engine.decide(task.agent_id, world_id, current_tick)
             self.last_decision_tick[task.agent_id] = current_tick
             
+            if record:
+                metrics.inc_counter("llm_calls")
+                tokens = record.token_usage.get("total_tokens", 0)
+                metrics.inc_counter("llm_tokens", tokens)
+                metrics.inc_gauge("estimated_cost_usd", (tokens / 1000.0) * 0.01)
+                metrics.observe_latency("llm_latency", record.latency)
+            
             if not action:
-                self.metrics["actions_rejected"] += 1
+                metrics.inc_counter("actions_rejected")
+                metrics.inc_counter("agent_decisions_failed")
                 return task, None, False
                 
             is_fallback = "fallback" in action.justification_summary.lower()
             
             if is_fallback:
-                self.metrics["actions_rejected"] += 1
+                metrics.inc_counter("actions_rejected")
+                metrics.inc_counter("agent_decisions_fallback")
                 return task, action, False
             else:
+                metrics.inc_counter("agent_decisions_success")
                 return task, action, True
                 
-        except Exception:
-            self.metrics["actions_rejected"] += 1
+        except Exception as e:
+            metrics.inc_counter("actions_rejected")
+            metrics.inc_counter("agent_decisions_failed")
             return task, None, False

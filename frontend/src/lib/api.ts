@@ -66,3 +66,31 @@ export async function fetchCausalChain(worldId: string, eventId: string) {
   if (!res.ok) throw new Error("Failed to fetch causal chain");
   return res.json();
 }
+
+export async function triggerIntervention(worldId: string, type: string, targetId?: string, payload?: any) {
+  const res = await fetch(`${API_BASE}/worlds/${worldId}/interventions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      type,
+      target_id: targetId || null,
+      payload: payload || {}
+    })
+  });
+  if (!res.ok) throw new Error(`Failed to trigger intervention: ${type}`);
+  return res.json();
+}
+
+export async function createCounterfactual(worldId: string) {
+  const res = await fetch(`${API_BASE}/worlds/${worldId}/counterfactual`, {
+    method: "POST"
+  });
+  if (!res.ok) throw new Error("Failed to create counterfactual");
+  return res.json();
+}
+
+export async function compareWorlds(worldId: string, targetWorldId: string) {
+  const res = await fetch(`${API_BASE}/worlds/${worldId}/compare/${targetWorldId}`);
+  if (!res.ok) throw new Error("Failed to compare worlds");
+  return res.json();
+}

@@ -1,11 +1,15 @@
 import uuid
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.agents.models import AgentAction, AgentContext, ActionType
 from app.agents.interfaces import ActionValidator
 from app.llm.provider import LLMProvider
+from app.core.telemetry import TraceLogger, metrics
+import time
+
+logger = TraceLogger(__name__)
 
 class DecisionRecord(BaseModel):
     decision_id: uuid.UUID = Field(default_factory=uuid.uuid4)
@@ -16,7 +20,7 @@ class DecisionRecord(BaseModel):
     action: AgentAction
     confidence: float
     latency: float
-    token_usage: Dict[str, int]
+    token_usage: Dict[str, Any]
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     model_config = ConfigDict(frozen=True)
@@ -96,7 +100,7 @@ class CharacterDecisionEngine:
         current_tick: int, 
         character: Any = None,
         world: Any = None
-    ) -> Optional[AgentAction]:
+    ) -> Tuple[Optional[AgentAction], DecisionRecord]:
         
         # 1. Perception & Context Generation
         context = self._build_context(character, world)
@@ -109,10 +113,14 @@ class CharacterDecisionEngine:
         
         # 3. Handle Failure & Malformed Response deterministically
         if not response.is_success or not response.decision:
-            action = self._create_fallback_action(agent_id, "Fallback due to LLM provider failure.")
-            decision_summary = "LLM failure fallback"
+            error_msg = response.metadata.error if response.metadata else "Unknown LLM failure"
+            metrics.inc_counter("llm_failures")
+            logger.error(f"Agent decision failed", world_id=str(world_id), tick=current_tick, agent_id=str(agent_id), error=error_msg)
+            
+            action = self._create_fallback_action(agent_id, f"Fallback due to LLM provider failure: {error_msg}")
+            decision_summary = f"LLM failure fallback: {error_msg}"
             confidence = 1.0
-            usage_dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            usage_dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "error": error_msg}
             latency = response.metadata.latency_ms if response.metadata else 0.0
         else:
             decision = response.decision
@@ -137,8 +145,10 @@ class CharacterDecisionEngine:
         
         # 4. Action Validation
         if not self.validator.validate(action, context):
+            logger.warning(f"Agent {agent_id} proposed invalid action {action.action_type}. Using fallback.")
             action = self._create_fallback_action(agent_id, "Proposed action was invalid for current context.")
             decision_summary = "Validation failure fallback"
+            usage_dict["error"] = "Validation failure"
 
         # 5. Metadata & Persistence
         record = DecisionRecord(
@@ -157,7 +167,18 @@ class CharacterDecisionEngine:
         # 6. Update Cooldown tracking
         self._last_decision_tick[agent_id] = current_tick
         
-        return action
+        is_fallback = "fallback" in action.justification_summary.lower()
+        logger.info(
+            "Agent decision generated",
+            world_id=str(world_id),
+            tick=current_tick,
+            agent_id=str(agent_id),
+            decision_id=str(record.decision_id),
+            action_type=action.action_type.value,
+            fallback=is_fallback
+        )
+        
+        return action, record
 
 # Simple mock stubs for the pipeline components
 class PerceptionBuilder:
@@ -165,8 +186,33 @@ class PerceptionBuilder:
         return {"health": 100, "wealth": 50}
 
 class MemoryRetriever:
-    def retrieve(self, character: Any) -> List[Dict[str, Any]]:
-        return []
+    def retrieve(self, character: Any, max_memories: int = 5) -> List[Dict[str, Any]]:
+        start_time = time.time()
+        
+        if not hasattr(character, 'memories') or not character.memories:
+            return []
+            
+        memories = list(character.memories)
+        
+        # Relevant-memory retrieval: sort by importance and recency
+        memories.sort(key=lambda m: (getattr(m, 'importance', 0), getattr(m, 'tick', 0)), reverse=True)
+        
+        # Context minimization: Limit context window size
+        top_memories = memories[:max_memories]
+        
+        # Memory summarization: extract only minimal semantic content
+        summarized = []
+        for mem in top_memories:
+            summarized.append({
+                "type": getattr(mem, "type", "event"),
+                "summary": getattr(mem, "summary", str(mem)),
+                "age": getattr(character, "world", None).current_tick - getattr(mem, "tick", 0) if hasattr(character, "world") else getattr(mem, "tick", 0)
+            })
+            
+        latency_ms = (time.time() - start_time) * 1000.0
+        metrics.observe_latency("memory_retrieval_latency", latency_ms)
+        
+        return summarized
 
 class GoalEvaluator:
     def evaluate(self, character: Any) -> List[Dict[str, Any]]:
@@ -213,7 +259,7 @@ class FactionDecisionEngine(CharacterDecisionEngine):
         current_tick: int, 
         faction: Any = None,
         world: Any = None
-    ) -> Optional[AgentAction]:
+    ) -> Tuple[Optional[AgentAction], DecisionRecord]:
         
         context = self._build_context(faction, world)
         
@@ -223,10 +269,14 @@ class FactionDecisionEngine(CharacterDecisionEngine):
         response = await self.llm_provider.get_decision(system_prompt, user_prompt)
         
         if not response.is_success or not response.decision:
-            action = self._create_fallback_action(agent_id, "Fallback due to LLM provider failure.")
-            decision_summary = "LLM failure fallback"
+            error_msg = response.metadata.error if response.metadata else "Unknown LLM failure"
+            metrics.inc_counter("llm_failures")
+            logger.error(f"Faction decision failed", world_id=str(world_id), tick=current_tick, agent_id=str(agent_id), error=error_msg)
+            
+            action = self._create_fallback_action(agent_id, f"Fallback due to LLM provider failure: {error_msg}")
+            decision_summary = f"LLM failure fallback: {error_msg}"
             confidence = 1.0
-            usage_dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            usage_dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "error": error_msg}
             latency = response.metadata.latency_ms if response.metadata else 0.0
         else:
             decision = response.decision
@@ -248,8 +298,10 @@ class FactionDecisionEngine(CharacterDecisionEngine):
             latency = response.metadata.latency_ms
         
         if not self.validator.validate(action, context):
+            logger.warning(f"Faction {agent_id} proposed invalid action {action.action_type}. Using fallback.")
             action = self._create_fallback_action(agent_id, "Proposed action was invalid for current context.")
             decision_summary = "Validation failure fallback"
+            usage_dict["error"] = "Validation failure"
 
         record = DecisionRecord(
             agent_id=agent_id,
@@ -265,4 +317,15 @@ class FactionDecisionEngine(CharacterDecisionEngine):
         await self.store.save(record)
         self._last_decision_tick[agent_id] = current_tick
         
-        return action
+        is_fallback = "fallback" in action.justification_summary.lower()
+        logger.info(
+            "Faction decision generated",
+            world_id=str(world_id),
+            tick=current_tick,
+            agent_id=str(agent_id),
+            decision_id=str(record.decision_id),
+            action_type=action.action_type.value,
+            fallback=is_fallback
+        )
+        
+        return action, record

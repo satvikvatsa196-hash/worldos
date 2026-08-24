@@ -8,6 +8,9 @@ from sqlalchemy import select
 from app.agents.models import AgentAction, ActionType
 from app.infrastructure.models import Character, City, Faction, Resource, Inventory
 from app.domain.event.models import WorldEvent, EventType
+from app.core.telemetry import TraceLogger
+
+logger = TraceLogger(__name__)
 
 class ExecutionStatus(str, Enum):
     SUCCESS = "SUCCESS"
@@ -65,11 +68,15 @@ class ActionExecutionEngine:
                 if result.status == ExecutionStatus.REJECTED:
                     # Rollback changes if validation inside handlers failed
                     await self.session.rollback()
+                    logger.warning("Action execution rejected", world_id=str(world_id), tick=current_tick, action_id=str(result.action_id), actor_id=str(action.actor_id), action_type=action.action_type.value, reason=result.reason)
+                else:
+                    logger.info("Action execution successful", world_id=str(world_id), tick=current_tick, action_id=str(result.action_id), actor_id=str(action.actor_id), action_type=action.action_type.value, events_count=len(result.events_generated))
                     
                 return result
                 
         except Exception as e:
             await self.session.rollback()
+            logger.error("Action execution failed", world_id=str(world_id), tick=current_tick, actor_id=str(action.actor_id), action_type=action.action_type.value, error=str(e))
             return ActionExecutionResult(status=ExecutionStatus.FAILED, reason=f"Execution error: {str(e)}")
 
     async def _execute_buy(self, actor: Character, action: AgentAction, tick: int) -> ActionExecutionResult:
@@ -272,8 +279,20 @@ class ActionExecutionEngine:
         return ActionExecutionResult(status=ExecutionStatus.SUCCESS, reason="Gave money", events_generated=[event])
 
     async def _execute_work(self, actor: Character, action: AgentAction, tick: int) -> ActionExecutionResult:
-        # Simple implementation: earn base wage
+        # Simple implementation: earn base wage from city
         wage = 10.0
+        
+        city_stmt = select(City).where(City.id == actor.city_id)
+        city_result = await self.session.execute(city_stmt)
+        city = city_result.scalar_one_or_none()
+        
+        if not city:
+            return ActionExecutionResult(status=ExecutionStatus.REJECTED, reason="Actor not in a city")
+            
+        if city.wealth < wage:
+            return ActionExecutionResult(status=ExecutionStatus.REJECTED, reason="City has insufficient funds to pay wage")
+            
+        city.wealth -= wage
         actor.wealth += wage
         
         event = WorldEvent(

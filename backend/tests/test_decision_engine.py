@@ -65,7 +65,7 @@ async def test_llm_invocation_and_persistence(store, agent_id, world_id):
     validator = MockActionValidator(accept_all=True)
     engine = CharacterDecisionEngine(llm, validator, store)
     
-    action = await engine.decide(agent_id, world_id, 1)
+    action, record = await engine.decide(agent_id, world_id, 1)
     
     assert action is not None
     assert action.action_type == ActionType.WORK
@@ -86,7 +86,7 @@ async def test_llm_failure_and_fallback(store, agent_id, world_id):
     validator = MockActionValidator(accept_all=True)
     engine = CharacterDecisionEngine(llm, validator, store)
     
-    action = await engine.decide(agent_id, world_id, 1)
+    action, record = await engine.decide(agent_id, world_id, 1)
     
     # Should fallback to DO_NOTHING deterministically
     assert action is not None
@@ -95,7 +95,7 @@ async def test_llm_failure_and_fallback(store, agent_id, world_id):
     # Verify persistence still records the fallback
     assert len(store.records) == 1
     record = store.records[0]
-    assert record.decision_summary == "LLM failure fallback"
+    assert "LLM failure fallback" in record.decision_summary
     assert record.action.action_type == ActionType.DO_NOTHING
 
 @pytest.mark.asyncio
@@ -114,7 +114,7 @@ async def test_malformed_action_type(store, agent_id, world_id):
     validator = MockActionValidator(accept_all=True)
     engine = CharacterDecisionEngine(llm, validator, store)
     
-    action = await engine.decide(agent_id, world_id, 1)
+    action, record = await engine.decide(agent_id, world_id, 1)
     
     # Should gracefully default to DO_NOTHING when parsing fails
     assert action.action_type == ActionType.DO_NOTHING
@@ -127,7 +127,7 @@ async def test_validator_rejection(store, agent_id, world_id):
     validator = MockActionValidator(accept_all=False)
     engine = CharacterDecisionEngine(llm, validator, store)
     
-    action = await engine.decide(agent_id, world_id, 1)
+    action, record = await engine.decide(agent_id, world_id, 1)
     
     # Should be replaced by fallback
     assert action.justification_summary == "Proposed action was invalid for current context."
