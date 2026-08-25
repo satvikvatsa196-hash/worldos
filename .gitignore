@@ -11,6 +11,9 @@ env/
 node_modules/
 dist/
 
+# Next.js
+.next/
+
 # IDEs and OS
 .vscode/
 .idea/
