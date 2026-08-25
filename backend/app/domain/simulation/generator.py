@@ -35,7 +35,7 @@ class WorldGenerator:
         """
         # Create world
         world = World(
-            id=uuid.UUID(int=self.rng.getrandbits(128)),
+            id=uuid.uuid4(),
             name=self.config.name,
             seed=str(self.config.seed),
             current_tick=0,
@@ -46,7 +46,7 @@ class WorldGenerator:
         resources = []
         for res_name in RESOURCE_TYPES:
             resources.append(Resource(
-                id=uuid.UUID(int=self.rng.getrandbits(128)),
+                id=uuid.uuid4(),
                 world_id=world.id,
                 name=res_name,
                 current_price=self.rng.uniform(1.0, 10.0),
@@ -60,7 +60,7 @@ class WorldGenerator:
         cities = []
         for i in range(self.config.cities):
             cities.append(City(
-                id=uuid.UUID(int=self.rng.getrandbits(128)),
+                id=uuid.uuid4(),
                 world_id=world.id,
                 name=f"City_{i+1}",
                 population=self.rng.randint(1000, 5000),
@@ -78,7 +78,7 @@ class WorldGenerator:
             category = self.rng.choice(list(FACTION_TYPES.keys()))
             f_name_template = self.rng.choice(FACTION_TYPES[category])
             factions.append(Faction(
-                id=uuid.UUID(int=self.rng.getrandbits(128)),
+                id=uuid.uuid4(),
                 world_id=world.id,
                 name=f"{f_name_template} {i+1}",
                 type=category,
@@ -105,7 +105,7 @@ class WorldGenerator:
                 
             faction = self.rng.choice(eligible_factions) if self.rng.random() > 0.3 else None
             
-            char_id = uuid.UUID(int=self.rng.getrandbits(128))
+            char_id = uuid.uuid4()
             
             # Consistent traits
             traits = self._generate_traits(occ)
@@ -163,7 +163,7 @@ class WorldGenerator:
                     friendship += 10.0
                     
                 relationships.append(Relationship(
-                    id=uuid.UUID(int=self.rng.getrandbits(128)),
+                    id=uuid.uuid4(),
                     source_character_id=char1.id,
                     target_character_id=char2.id,
                     trust=self.rng.uniform(0.0, min(100.0, friendship + 20)),
@@ -222,7 +222,7 @@ class WorldGenerator:
     def _assign_initial_inventory(self, character: Character, resource_map: Dict[str, Resource], inventories: List[Inventory]):
         # Base minimal food
         inventories.append(Inventory(
-            id=uuid.UUID(int=self.rng.getrandbits(128)),
+            id=uuid.uuid4(),
             owner_id=character.id,
             owner_type="character",
             resource_id=resource_map["Food"].id,
@@ -231,19 +231,19 @@ class WorldGenerator:
         
         occ = character.occupation
         if occ == "farmer":
-            inventories.append(Inventory(id=uuid.UUID(int=self.rng.getrandbits(128)), owner_id=character.id, owner_type="character", resource_id=resource_map["Food"].id, quantity=self.rng.uniform(50.0, 200.0)))
+            inventories.append(Inventory(id=uuid.uuid4(), owner_id=character.id, owner_type="character", resource_id=resource_map["Food"].id, quantity=self.rng.uniform(50.0, 200.0)))
         elif occ == "woodcutter":
-            inventories.append(Inventory(id=uuid.UUID(int=self.rng.getrandbits(128)), owner_id=character.id, owner_type="character", resource_id=resource_map["Wood"].id, quantity=self.rng.uniform(20.0, 100.0)))
+            inventories.append(Inventory(id=uuid.uuid4(), owner_id=character.id, owner_type="character", resource_id=resource_map["Wood"].id, quantity=self.rng.uniform(20.0, 100.0)))
         elif occ == "miner":
             if self.rng.random() > 0.5:
-                inventories.append(Inventory(id=uuid.UUID(int=self.rng.getrandbits(128)), owner_id=character.id, owner_type="character", resource_id=resource_map["Stone"].id, quantity=self.rng.uniform(20.0, 80.0)))
+                inventories.append(Inventory(id=uuid.uuid4(), owner_id=character.id, owner_type="character", resource_id=resource_map["Stone"].id, quantity=self.rng.uniform(20.0, 80.0)))
             else:
-                inventories.append(Inventory(id=uuid.UUID(int=self.rng.getrandbits(128)), owner_id=character.id, owner_type="character", resource_id=resource_map["Iron"].id, quantity=self.rng.uniform(10.0, 50.0)))
+                inventories.append(Inventory(id=uuid.uuid4(), owner_id=character.id, owner_type="character", resource_id=resource_map["Iron"].id, quantity=self.rng.uniform(10.0, 50.0)))
         elif occ == "merchant":
-            inventories.append(Inventory(id=uuid.UUID(int=self.rng.getrandbits(128)), owner_id=character.id, owner_type="character", resource_id=resource_map["Gold"].id, quantity=self.rng.uniform(50.0, 300.0)))
+            inventories.append(Inventory(id=uuid.uuid4(), owner_id=character.id, owner_type="character", resource_id=resource_map["Gold"].id, quantity=self.rng.uniform(50.0, 300.0)))
             # Random resource stock
             random_res = self.rng.choice(list(resource_map.values()))
-            inventories.append(Inventory(id=uuid.UUID(int=self.rng.getrandbits(128)), owner_id=character.id, owner_type="character", resource_id=random_res.id, quantity=self.rng.uniform(20.0, 100.0)))
+            inventories.append(Inventory(id=uuid.uuid4(), owner_id=character.id, owner_type="character", resource_id=random_res.id, quantity=self.rng.uniform(20.0, 100.0)))
 
     def _assign_goals(self, character: Character, goals: List[Goal]):
         occ = character.occupation
@@ -257,7 +257,7 @@ class WorldGenerator:
             desc = "Ensure basic survival and stability"
             
         goals.append(Goal(
-            id=uuid.UUID(int=self.rng.getrandbits(128)),
+            id=uuid.uuid4(),
             character_id=character.id,
             description=desc,
             priority=self.rng.randint(1, 5),

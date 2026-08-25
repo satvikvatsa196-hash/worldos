@@ -133,8 +133,11 @@ class AgentScheduler:
                 metrics.inc_counter("llm_calls_saved")
                 
         if not tasks_to_run:
+            logger.info("No tasks to run")
             return
 
+        logger.info(f"Running {len(tasks_to_run)} tasks")
+        
         # 1. PERCEPTION -> PARALLEL DECISIONS -> ACTION VALIDATION
         # Run decisions concurrently
         results = await asyncio.gather(*(self.evaluate_agent(task, world_id, current_tick) for task in tasks_to_run))
@@ -143,6 +146,7 @@ class AgentScheduler:
         
         for task, action, success in results:
             if not success:
+                logger.info(f"Agent {task.agent_id} evaluation failed or fallback")
                 if task.retries < 3:
                     self.schedule_agent(
                         task.agent_id, 
@@ -154,6 +158,8 @@ class AgentScheduler:
             elif action and action.action_type.value != "DO_NOTHING":
                 valid_actions.append((task, action))
 
+        logger.info(f"Valid actions generated: {len(valid_actions)}")
+
         # 2. DETERMINISTIC SORTING
         # Ordering by: world tick, agent priority, agent ID (lexicographical fallback to ensure determinism)
         valid_actions.sort(key=lambda item: (current_tick, item[0].priority, str(item[0].agent_id)))
@@ -163,11 +169,13 @@ class AgentScheduler:
             if self.action_executor:
                 exec_result = await self.action_executor.execute(action, world_id, current_tick)
                 if exec_result.status == ExecutionStatus.SUCCESS:
+                    logger.info(f"Action executed successfully, emitted {len(exec_result.events_generated)} events")
                     metrics.inc_counter("actions_executed")
                     for event in exec_result.events_generated:
                         metrics.inc_counter("events_emitted")
                         await self.event_bus.publish(event)
                 else:
+                    logger.info(f"Action execution rejected: {exec_result.reason}")
                     metrics.inc_counter("actions_rejected")
             else:
                 metrics.inc_counter("actions_executed")
@@ -200,6 +208,7 @@ class AgentScheduler:
                 return task, action, True
                 
         except Exception as e:
+            logger.error(f"Agent {task.agent_id} decision evaluation failed", error=str(e), exc_info=True)
             metrics.inc_counter("actions_rejected")
             metrics.inc_counter("agent_decisions_failed")
             return task, None, False

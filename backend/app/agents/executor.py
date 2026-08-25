@@ -23,6 +23,11 @@ class ActionExecutionResult(BaseModel):
     reason: str
     events_generated: List[WorldEvent] = Field(default_factory=list)
 
+class ExecutionRejectedError(Exception):
+    def __init__(self, result: ActionExecutionResult):
+        self.result = result
+        super().__init__(result.reason)
+
 class ActionExecutionEngine:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -36,9 +41,9 @@ class ActionExecutionEngine:
                 actor = actor_result.scalar_one_or_none()
                 
                 if not actor:
-                    return ActionExecutionResult(status=ExecutionStatus.REJECTED, reason="Actor does not exist")
+                    raise ExecutionRejectedError(ActionExecutionResult(status=ExecutionStatus.REJECTED, reason="Actor does not exist"))
                 if actor.world_id != world_id:
-                    return ActionExecutionResult(status=ExecutionStatus.REJECTED, reason="Actor does not belong to this world")
+                    raise ExecutionRejectedError(ActionExecutionResult(status=ExecutionStatus.REJECTED, reason="Actor does not belong to this world"))
 
                 result = None
                 
@@ -63,19 +68,19 @@ class ActionExecutionEngine:
                 elif action.action_type == ActionType.DO_NOTHING:
                     result = ActionExecutionResult(status=ExecutionStatus.SUCCESS, reason="Did nothing")
                 else:
-                    return ActionExecutionResult(status=ExecutionStatus.REJECTED, reason="Unsupported action type")
+                    raise ExecutionRejectedError(ActionExecutionResult(status=ExecutionStatus.REJECTED, reason="Unsupported action type"))
 
                 if result.status == ExecutionStatus.REJECTED:
-                    # Rollback changes if validation inside handlers failed
-                    await self.session.rollback()
-                    logger.warning("Action execution rejected", world_id=str(world_id), tick=current_tick, action_id=str(result.action_id), actor_id=str(action.actor_id), action_type=action.action_type.value, reason=result.reason)
+                    raise ExecutionRejectedError(result)
                 else:
                     logger.info("Action execution successful", world_id=str(world_id), tick=current_tick, action_id=str(result.action_id), actor_id=str(action.actor_id), action_type=action.action_type.value, events_count=len(result.events_generated))
                     
                 return result
                 
+        except ExecutionRejectedError as e:
+            logger.warning("Action execution rejected", world_id=str(world_id), tick=current_tick, actor_id=str(action.actor_id), action_type=action.action_type.value, reason=e.result.reason)
+            return e.result
         except Exception as e:
-            await self.session.rollback()
             logger.error("Action execution failed", world_id=str(world_id), tick=current_tick, actor_id=str(action.actor_id), action_type=action.action_type.value, error=str(e))
             return ActionExecutionResult(status=ExecutionStatus.FAILED, reason=f"Execution error: {str(e)}")
 

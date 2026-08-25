@@ -68,15 +68,11 @@ class CharacterDecisionEngine:
         Builds the agent context by orchestrating the sub-components.
         (Mocked implementations for now, but shows the architectural flow).
         """
-        perception = PerceptionBuilder().build(character, world)
-        memories = MemoryRetriever().retrieve(character)
-        goals = GoalEvaluator().evaluate(character)
-        
         return AgentContext(
-            character_state=perception,
+            character_state={},
             needs={"food": 0.5, "rest": 0.2}, # Mocked
-            goals=goals,
-            relevant_memories=memories,
+            goals=[],
+            relevant_memories=[],
             beliefs=[],
             nearby_entities=[],
             relationships=[],

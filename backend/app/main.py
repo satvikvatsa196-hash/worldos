@@ -7,6 +7,7 @@ from app.infrastructure.redis_client import redis_client
 from app.api.worlds import router as worlds_router
 from app.api.ws import router as ws_router
 from app.core.telemetry import setup_telemetry, metrics
+from app.core.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,7 +27,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Since it's a local simulation, open to all for now
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,94 +1,133 @@
 # WORLDOS
 
-WORLDOS is an autonomous persistent world simulation powered by agentic AI.
+WORLDOS is an autonomous persistent world simulation.
 
 ## Overview
 
-The world contains characters, cities, factions, governments, resources, economies, relationships, goals, beliefs, memories, political events, economic events, and cascading consequences.
+Unlike a chatbot or scripted game, characters independently make decisions inside a deterministic world. The user is primarily an observer, watching emergent events, economic shifts, and political maneuvers unfold through a real-time causal graph.
 
-The user is primarily an OBSERVER, not a direct character controller.
+## Architecture
 
-## Implemented Features
+At the core of WORLDOS is an invariant-enforced simulation engine paired with an LLM-driven decision loop.
 
-- **Robust Persistence Layer**: Fully asynchronous SQLAlchemy 2.0 configuration with PostgreSQL, Redis, and a Unit of Work repository pattern.
-- **Core Domain Entities**: Complete modeling of `World`, `City`, `Character`, `Faction`, `Resource`, `Inventory`, `Relationship`, `Goal`, `Memory`, and `Event` ecosystems.
-- **Procedural World Generation**: A strictly deterministic, seed-based world generator that creates highly coherent starting states (tying character occupations to appropriate factions, relationships, and resource constraints). Accessible via the `POST /worlds/generate` API endpoint.
-- **Deterministic Simulation Engine**: An autonomous tick-based clock controlling simulation states (`start`, `pause`, `advance`) completely isolated from the HTTP layer. One tick accurately represents one simulated hour, seamlessly rolling over to track days and globally synchronizing world updates.
-- **Dynamic Character Needs System**: Character motivations are mathematically modeled via bounded `CharacterNeeds` (`food`, `shelter`, `wealth`, `safety`, `social`, `status`). Need levels deterministically decay and adapt based on environmental contexts (like hunger over time, unemployment, danger, or isolation) generating immutable snapshots for future AI decisions.
-- **Economic Production & Consumption**: A closed-loop resource tracker assigning production yields (e.g., miners -> iron) and baseline consumption rates based on character occupation. Protected by strict invariant/conservation ledgers so resources cannot magically appear or disappear.
-- **Market & Pricing Simulation**: A localized trading engine calculating real-time, dynamic pricing based on a transparent supply/demand scarcity formula. Transactions operate atomically across character inventories, cleanly handling money and resource transfers.
-- **Immutable Event System**: A rigorous, auditable event pub-sub store tracking all significant domain occurrences (trades, protests, migrations, etc.). All events strictly map via an acyclic parent-child graph and are mathematically immutable upon creation.
-- **Cascading Consequence Engine**: A deterministic breadth-first-search engine modeling rippling effects of events (e.g., `FOOD_SHORTAGE` -> `PROTEST` -> `POLITICAL_TENSION`). Preventative mechanisms like cascade depth-limiting, rule cooldowns, and cryptographic duplicate-event suppression are built-in.
-- **Agent Architecture**: A strictly constrained agent decision layer built entirely around structured Pydantic representations (e.g., `AgentContext`, `AgentAction`). Enforces that agents only *propose* actions via immutable snapshots, completely shielding world-state integrity.
-- **Pluggable LLM Abstraction**: A fault-tolerant wrapper (`LLMProvider`) standardizing the interaction with underlying models (e.g., OpenAI). Provides native JSON schema enforcement, usage/latency metrics, timeout thresholds, and robust fallback responses. No "chain-of-thought" is unnecessarily stored.
-- **Character Decision Engine**: An orchestrator translating simulation state into LLM prompts without spamming APIs. Operates on priority-driven frequency cooldowns, utilizing LLM-derived deterministic fallbacks on errors.
-- **Action Execution Engine**: The final gatekeeper resolving proposed LLM actions against domain rules (e.g., checking bank balances before purchases). Operates within strict nested database transactions that completely rollback and gracefully capture rejection data upon invalid action attempts.
-- **Agent Memory System**: A persistent memory system that filters events by importance thresholds, storing only significant occurrences (e.g., betrayals, major trades). Utilizes a relevance-scoring retriever that prioritizes entity overlap to feed agents highly contextual, long-term memory.
-- **Personality & Beliefs**: Characters possess normalized personality traits (ambition, greed, empathy) which drive a subjective `BeliefUpdateEngine`. Characters observing identical events form divergent, entirely subjective (and sometimes inaccurate) beliefs about other agents, factions, and policies.
-- **Dynamic Relationships**: An organic social web tracking trust, respect, friendship, hostility, influence, and obligation. Relationships evolve deterministically based on agent interactions (e.g., helping during a crisis spikes obligation, while betrayal spikes hostility).
-- **Faction Simulation**: Organizations (Factions) operate as macro-agents using the exact same decision engine architecture. Factions perceive their wealth, power, and ideology, proposing macro-level actions like recruiting, funding protests, or forming alliances.
-- **Deterministic Political Engine**: A policy-driven government simulation handling taxes, wages, subsidies, military spending, and market regulations. The engine calculates citizen approval, stability, and security capacity strictly without randomness—predictably triggering events like protests or strikes when conditions deteriorate or opposing factions exert pressure.
-- **World Lifecycle Management**: API-driven controls for starting, pausing, and advancing the simulation. Features a non-mutating world cloning architecture that automatically untangles and remaps complex circular dependencies (like Faction leaders), allowing users to branch historical scenarios natively in the database.
-- **Real-time Event Streaming**: A resilient WebSockets layer backed by Redis pub-sub. Selectively broadcasts incremental domain events (e.g., market crashes, character actions, protests) to connected clients in real-time, completely bypassing the need to poll massive full-world state payloads.
-- **Robust Quality & Determinism**: A meticulously calibrated testing framework that guarantees 100% deterministic, deadlock-free integration tests across asynchronous boundaries. Proactively prevents PostgreSQL connection pool deadlocks and strictly isolates async event loops to ensure high reliability across operating systems.
-- **Observer Command Center**: A Next.js-powered "God Mode" dashboard built to monitor the simulation. Features live metric charts via Recharts, simulation clock controls, and dynamic event filtering.
-- **Interactive World Map**: A React Flow visualization deterministically plotting City and Faction spatial networks, highlighting real-time civil unrest pulses and trade routes.
-- **Entity Deep-Dive Inspectors**: Granular UI panels enabling users to instantly inspect the live cognitive states of Agents (Needs, Traits, Beliefs, Decisions) and Factions (Power metrics, Wealth, Rosters) relying on efficient, deep-joined database queries.
-- **Causal Event Graph**: An interactive node-based visualization explicitly tracing the deterministic lineage of simulation events (Ancestors to Descendants) natively from the database schema to completely eliminate LLM hallucination.
-- **Causal Investigation Mode**: A chronological "WHY DID THIS HAPPEN?" root-cause analysis tool. Walks backwards through the event graph to extract the exact agent decisions, actor targets, and downstream political/economic consequences responsible for major world shifts.
-- **World-Level Interventions**: Tools for the Observer to inject shocks (e.g., Drought, Resource Shortage, Tax Change, Embargo) directly into the simulation, triggering verifiable downstream consequences without direct character control.
-- **Counterfactual Branching**: An advanced cloning architecture allowing the Observer to pause a timeline, modify a specific variable, and run an alternate reality side-by-side to safely test "what-if" scenarios.
-- **Agent System Hardening**: Comprehensive fault-tolerance handling LLM rate limits, timeouts, context overflows, and invalid JSON schemas, utilizing rigorous deterministic fallback logic to ensure the simulation never freezes.
-- **Cost & Performance Optimization**: A highly optimized Agent Scheduler prioritizing decisions based on urgency and cooldowns, event-driven wakeups, and relevant-memory context minimization to drastically slash LLM call volumes and costs.
-- **Simulation Observability**: A robust telemetry framework injecting trace metadata across all operations, complete with a centralized metrics registry tracking simulation throughput, API latency, tokens, cost, and database performance.
-- **Invariant Test Suite**: An end-to-end continuous validation pipeline running deterministically (via Mock LLMs) to guarantee critical domain invariants like 100% money and resource conservation across deep event cascades.
+```mermaid
+flowchart TD
+    A[World State] --> B[Agent Perception]
+    B --> C[Memory]
+    C --> D[Goals]
+    D --> E[LLM Decision]
+    E --> F[Structured Action]
+    F --> G[Validation]
+    G --> H[Simulation]
+    H --> I[Event]
+    I --> J[Consequences]
+    J --> K[New World State]
+    K --> A
+```
 
-## Core Loop
+### Core Systems
 
-1. **WORLD STATE**
-2. **AGENT PERCEPTION**
-3. **MEMORY RETRIEVAL**
-4. **GOALS + PERSONALITY + BELIEFS**
-5. **LLM DECISION**
-6. **STRUCTURED ACTION**
-7. **ACTION VALIDATION**
-8. **DETERMINISTIC SIMULATION ENGINE**
-9. **WORLD STATE CHANGE**
-10. **EVENT**
-11. **CONSEQUENCES**
-12. **NEW WORLD STATE**
-13. **AGENTS WAKE UP**
+- **Agent Architecture**: Agents are autonomous actors running inside the simulation clock. They perceive the state of the world, synthesize memories, and choose structural actions via an LLM.
+- **Deterministic Simulation**: A strict, tick-based engine isolated from LLM hallucinations. All state transitions (hunger, resource decay, time passing) are purely mathematical and predictable.
+- **Economic Model**: A closed-loop ledger system. Resources and money cannot magically appear or disappear. Prices dynamically adjust based on scarcity, supply, and demand curves.
+- **Political Model**: Governments manage taxes and stability. High unrest, food shortages, or low wealth can trigger systemic political consequences like protests or reforms.
+- **Faction System**: Agents belong to factions (Guilds, Noble Houses, Mercenaries). Factions have collective wealth, influence, and ideologies that drive macro-level conflicts.
+- **Memory**: Agents record summarized observations of critical events. Memories decay or reinforce over time, directly informing future LLM context windows.
+- **Beliefs**: Higher-order synthesized opinions about other characters, factions, or the state of the world (e.g., "The King is weak", "The merchants are hoarding grain").
+- **Relationships**: A quantitative relationship graph tracking trust, respect, fear, friendship, and hostility, updated dynamically by event consequences.
+- **Event System**: All domain occurrences (trades, protests, movements) are stored as immutable events in an event bus.
+- **Causal Graph**: Every event retains a `parent_event_id`, creating an acyclic directed graph that allows observers to trace the exact chain of causality from a macro-event down to an individual's decision.
+- **WebSockets**: Real-time telemetry pipeline utilizing Redis Pub/Sub and FastAPI WebSockets to stream events to the Next.js observer dashboard seamlessly.
+- **Counterfactuals**: The deterministic architecture allows the simulation to branch and test hypothetical scenarios without affecting the main timeline.
+- **LLM Failure Handling**: If the LLM produces invalid schema, hallucinates unavailable resources, or timeouts, the Agent Scheduler falls back to safe, deterministic heuristic actions to prevent simulation crashes.
+- **Cost Optimization**: The simulation intelligently buffers context and restricts LLM calls to critical decision boundaries to minimize API costs.
 
-## Tech Stack
+## Getting Started
 
-- **Backend**: Python 3.12+, FastAPI, SQLAlchemy 2.x, PostgreSQL, Redis, Pydantic v2, Alembic, asyncio, pytest
-- **Frontend**: Next.js, TypeScript, Tailwind CSS, React Flow, Recharts
-- **Infrastructure**: Docker, Docker Compose
+### Local Setup (Python/Node)
 
-## Development
+1. Clone the repository and navigate to the project directory.
+2. Install backend dependencies:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   pip install websockets
+   ```
+3. Install frontend dependencies:
+   ```bash
+   cd ../frontend
+   npm install
+   ```
 
-See [architecture.md](docs/architecture.md) for architectural guidelines.
+### Docker Setup
 
-### Backend
+WORLDOS requires PostgreSQL and Redis. The easiest way to run the infrastructure is via Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+### Environment Variables
+
+Create a `.env` file in the `backend` directory:
+
+```env
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/worldos
+REDIS_URL=redis://localhost:6379/0
+LLM_API_KEY=your_api_key
+CORS_ORIGINS=["http://localhost:3000"]
+```
+
+### Database Setup
+
+Run the Alembic migrations to initialize the database schema:
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-pip install -r requirements.txt
-pytest
+alembic upgrade head
 ```
 
-### Frontend
+### LLM Configuration
+
+The decision engine supports any OpenAI-compatible endpoint. Ensure `LLM_API_KEY` is set. You can configure the specific model in `app/core/config.py`.
+
+### Running the Simulation
+
+1. Start the FastAPI backend:
+   ```bash
+   cd backend
+   python -m uvicorn app.main:app --reload
+   ```
+2. Start the Next.js Observer Dashboard:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+3. Open `http://localhost:3000/demo` in your browser.
+
+### Running Tests
+
+The test suite validates database invariants, agent decision parsing, and deadlock prevention.
 
 ```bash
-cd frontend
-npm install
-npm run dev
+cd backend
+pytest -v
 ```
 
-### Infrastructure
+## Demo Scenario: The Grain Crisis
 
-```bash
-docker compose up -d
-```
+The default scenario initializes a fragile world where food supplies are critically low, testing the resilience of the economic and political systems.
+
+*The demo scenario is not implemented as a scripted sequence; the observed chain emerges from agent decisions and simulation rules.*
+
+### Example Emergent Chain
+
+1. **Scarcity**: A drought reduces farm yields (Deterministic System).
+2. **Economic Shift**: The market price of grain skyrockets due to low supply (Economic Model).
+3. **Agent Action**: A poor laborer cannot afford food and their health declines (Agent Needs).
+4. **Cognitive Shift**: The laborer forms a belief that the Merchant Guild is hoarding grain (Belief System).
+5. **Macro Event**: The laborer, driven by high unrest, chooses the `PROTEST` action (LLM Decision).
+6. **Consequence**: The protest damages city stability and decreases the Merchant Guild's influence (Simulation Rules).
+
+---
+*Note: WORLDOS does not claim to possess AGI, human-level intelligence, true consciousness, or the ability to generate scientifically accurate economic predictions.*

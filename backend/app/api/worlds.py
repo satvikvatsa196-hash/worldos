@@ -14,6 +14,15 @@ from app.infrastructure.models import (
 )
 from app.domain.simulation.engine import SimulationEngine
 from app.core.telemetry import metrics, TraceLogger
+from app.agents.scheduler import AgentScheduler
+from app.agents.engine import CharacterDecisionEngine
+from app.agents.executor import ActionExecutionEngine
+from app.domain.event.bus import EventBus
+from app.llm.openai import OpenAIProvider
+from app.llm.mock import MockLLMProvider
+from app.core.config import settings
+from app.domain.event.store import EventStore
+from app.domain.event.models import EventType
 import time
 
 logger = TraceLogger(__name__)
@@ -48,6 +57,7 @@ class GenerateWorldRequest(BaseModel):
     cities: int = 4
     characters: int = 30
     factions: int = 4
+    scenario: Optional[str] = None
 
 class GenerateWorldResponse(BaseModel):
     world_id: uuid.UUID
@@ -80,17 +90,28 @@ async def list_worlds(
     result = await db.execute(select(World).offset(skip).limit(limit))
     worlds = result.scalars().all()
     
+    if not worlds:
+        return []
+        
+    world_ids = [w.id for w in worlds]
+    
+    cities_res = await db.execute(select(City.world_id, func.count(City.id)).where(City.world_id.in_(world_ids)).group_by(City.world_id))
+    cities_map = dict(cities_res.all())
+    
+    chars_res = await db.execute(select(Character.world_id, func.count(Character.id)).where(Character.world_id.in_(world_ids)).group_by(Character.world_id))
+    chars_map = dict(chars_res.all())
+    
+    facts_res = await db.execute(select(Faction.world_id, func.count(Faction.id)).where(Faction.world_id.in_(world_ids)).group_by(Faction.world_id))
+    facts_map = dict(facts_res.all())
+    
     responses = []
     for w in worlds:
-        cities = await db.execute(select(City).where(City.world_id == w.id))
-        chars = await db.execute(select(Character).where(Character.world_id == w.id))
-        facts = await db.execute(select(Faction).where(Faction.world_id == w.id))
         responses.append(WorldStateResponse(
             id=w.id, name=w.name, seed=w.seed, current_tick=w.current_tick, 
             simulation_status=w.simulation_status,
-            cities_count=len(cities.scalars().all()),
-            characters_count=len(chars.scalars().all()),
-            factions_count=len(facts.scalars().all())
+            cities_count=cities_map.get(w.id, 0),
+            characters_count=chars_map.get(w.id, 0),
+            factions_count=facts_map.get(w.id, 0)
         ))
     return responses
 
@@ -101,16 +122,16 @@ async def get_world(world_id: uuid.UUID, db: AsyncSession = Depends(get_db_sessi
     if not w:
         raise HTTPException(status_code=404, detail="World not found")
         
-    cities = await db.execute(select(City).where(City.world_id == w.id))
-    chars = await db.execute(select(Character).where(Character.world_id == w.id))
-    facts = await db.execute(select(Faction).where(Faction.world_id == w.id))
+    cities_count = await db.execute(select(func.count(City.id)).where(City.world_id == w.id))
+    chars_count = await db.execute(select(func.count(Character.id)).where(Character.world_id == w.id))
+    facts_count = await db.execute(select(func.count(Faction.id)).where(Faction.world_id == w.id))
     
     return WorldStateResponse(
         id=w.id, name=w.name, seed=w.seed, current_tick=w.current_tick, 
         simulation_status=w.simulation_status,
-        cities_count=len(cities.scalars().all()),
-        characters_count=len(chars.scalars().all()),
-        factions_count=len(facts.scalars().all())
+        cities_count=cities_count.scalar() or 0,
+        characters_count=chars_count.scalar() or 0,
+        factions_count=facts_count.scalar() or 0
     )
 
 @router.get("/{world_id}/state")
@@ -127,7 +148,7 @@ async def get_world_state(world_id: uuid.UUID, db: AsyncSession = Depends(get_db
     chars = [{"id": c.id, "name": c.name, "role": c.occupation, "wealth": c.wealth, "city_id": c.city_id, "faction_id": c.faction_id} for c in chars_res.scalars().all()]
     
     factions_res = await db.execute(select(Faction).where(Faction.world_id == world_id))
-    factions = [{"id": f.id, "name": f.name, "power": f.power} for f in factions_res.scalars().all()]
+    factions = [{"id": f.id, "name": f.name, "type": f.type, "wealth": f.wealth, "power": f.power} for f in factions_res.scalars().all()]
     
     resources_res = await db.execute(select(Resource).where(Resource.world_id == world_id))
     resources = [{"id": r.id, "name": r.name, "price": r.current_price} for r in resources_res.scalars().all()]
@@ -207,6 +228,46 @@ async def generate_world(request: GenerateWorldRequest, db: AsyncSession = Depen
         db.add_all(entities["goals"])
         db.add_all(entities["relationships"])
         
+        if request.scenario == "grain_crisis":
+            # Set up a fragile, balanced initial state for the Grain Crisis scenario
+            # Ensure "Food" supply is barely enough, cities have low food, prices are stable but sensitive
+            for city in entities["cities"]:
+                city.food_supply = city.population * 0.1  # Barely enough food
+                city.stability = 0.5
+                city.unrest = 0.4
+                city.wealth = 50000.0
+            
+            for res in entities["resources"]:
+                if res.name == "Food":
+                    res.current_price = 5.0
+                    res.total_supply = 1000.0
+                    res.total_demand = 950.0
+            
+            # Find a merchant faction and give them influence over the food supply
+            merchant_factions = [f for f in entities["factions"] if f.type == "merchant"]
+            if merchant_factions:
+                merch = merchant_factions[0]
+                merch.wealth = 20000.0  # Rich merchants
+                merch.power = 80.0
+                # Give leader a goal to increase wealth aggressively
+                if merch.leader_id:
+                    leader = next((c for c in entities["characters"] if c.id == merch.leader_id), None)
+                    if leader:
+                        traits = dict(leader.personality_traits)
+                        traits["greed"] = 0.95
+                        leader.personality_traits = traits
+            
+            # Set up a political faction that might intervene
+            political_factions = [f for f in entities["factions"] if f.type == "political"]
+            if political_factions:
+                pol = political_factions[0]
+                if pol.leader_id:
+                    leader = next((c for c in entities["characters"] if c.id == pol.leader_id), None)
+                    if leader:
+                        traits = dict(leader.personality_traits)
+                        traits["ambition"] = 0.9
+                        leader.personality_traits = traits
+                    
         await db.commit()
         
         summary = (
@@ -273,10 +334,38 @@ async def tick_simulation(world_id: uuid.UUID, db: AsyncSession = Depends(get_db
             payload={"day": evt.day, "hour": evt.hour}
         ))
     db.add_all(db_events)
+    
+    # Run Agent Scheduler
+    llm = OpenAIProvider() if settings.LLM_PROVIDER == "openai" else MockLLMProvider()
+    class DummyStore:
+        async def save(self, record): pass
+    class DummyValidator:
+        def validate(self, action, context): return True
+        
+    decision_engine = CharacterDecisionEngine(llm, DummyValidator(), DummyStore())
+    event_bus = EventBus()
+    event_store = EventStore(db)
+    async def save_event(evt):
+        await event_store.save(evt)
+    for evt_type in EventType:
+        event_bus.subscribe(evt_type, save_event)
+        
+    executor = ActionExecutionEngine(db)
+    scheduler = AgentScheduler(decision_engine, event_bus, action_executor=executor, max_concurrency=10)
+    
+    chars = await db.execute(select(Character).where(Character.world_id == world.id))
+    for char in chars.scalars().all():
+        scheduler.register_agent(char.id, {"role": char.occupation})
+        scheduler.schedule_agent(char.id, priority=1, urgency=10, reason="TICK")
+        
+    await scheduler.run_tick(world.id, world.current_tick)
+    
     await db.commit()
     
+    from app.api.ws import manager
+    connections_count = len(manager.active_connections.get(world.id, []))
     metrics.inc_counter("simulation_ticks", 1)
-    logger.info("Simulation tick advanced", world_id=str(world.id), tick=world.current_tick)
+    logger.info("Simulation tick advanced", world_id=str(world.id), tick=world.current_tick, ws_connections=connections_count)
     
     return SimulationResponse(world_id=world.id, current_tick=world.current_tick, status=world.simulation_status)
 
@@ -301,6 +390,33 @@ async def advance_simulation(world_id: uuid.UUID, request: AdvanceSimulationRequ
             payload={"day": evt.day, "hour": evt.hour}
         ))
     db.add_all(db_events)
+    
+    # Run Agent Scheduler
+    llm = OpenAIProvider() if settings.LLM_PROVIDER == "openai" else MockLLMProvider()
+    class DummyStore:
+        async def save(self, record): pass
+    class DummyValidator:
+        def validate(self, action, context): return True
+        
+    decision_engine = CharacterDecisionEngine(llm, DummyValidator(), DummyStore())
+    event_bus = EventBus()
+    event_store = EventStore(db)
+    async def save_event(evt):
+        await event_store.save(evt)
+    for evt_type in EventType:
+        event_bus.subscribe(evt_type, save_event)
+        
+    executor = ActionExecutionEngine(db)
+    scheduler = AgentScheduler(decision_engine, event_bus, action_executor=executor, max_concurrency=10)
+    
+    chars = await db.execute(select(Character).where(Character.world_id == world.id))
+    for char in chars.scalars().all():
+        scheduler.register_agent(char.id, {"role": char.occupation})
+        scheduler.schedule_agent(char.id, priority=1, urgency=10, reason="TICK")
+        
+    for tick in range(world.current_tick - request.ticks + 1, world.current_tick + 1):
+        await scheduler.run_tick(world.id, tick)
+        
     await db.commit()
     
     metrics.inc_counter("simulation_ticks", request.ticks)

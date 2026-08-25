@@ -68,7 +68,7 @@ export function CausalGraph({ worldId, eventId, onSelectEntity, onClose, charact
     };
 
     let currentIndex = 0;
-    let prevId = null;
+    let prevId: string | null = null;
 
     // Ancestors
     data.ancestors.forEach((anc) => {

@@ -51,12 +51,20 @@ export default function Home() {
       <div className="flex min-h-screen bg-zinc-950 flex-col items-center justify-center p-24 text-zinc-300 font-mono">
         <h1 className="text-4xl font-bold mb-4 text-cyan-500 tracking-widest">WORLDOS TERMINAL</h1>
         <p className="mb-8 text-zinc-500">No active simulations detected.</p>
-        <button 
-          onClick={handleGenerate}
-          className="px-6 py-3 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 hover:text-white transition-colors uppercase tracking-widest text-sm"
-        >
-          Initialize New World
-        </button>
+        <div className="flex gap-4">
+          <button 
+            onClick={handleGenerate}
+            className="px-6 py-3 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 hover:text-white transition-colors uppercase tracking-widest text-sm"
+          >
+            Initialize New World
+          </button>
+          <a 
+            href="/demo"
+            className="px-6 py-3 bg-cyan-950/30 border border-cyan-800 text-cyan-400 hover:bg-cyan-900/50 hover:text-cyan-300 transition-colors uppercase tracking-widest text-sm"
+          >
+            Launch Demo Mode
+          </a>
+        </div>
       </div>
     );
   }

@@ -28,6 +28,8 @@ class EventBus:
         try:
             client = await redis_client.get_client()
             # event.model_dump_json() serializes UUID and datetime correctly
-            await client.publish(f"world_{event.world_id}_events", event.model_dump_json())
-        except Exception:
+            subs = await client.publish(f"world_{event.world_id}_events", event.model_dump_json())
+            logger.info(f"Published event to {subs} subscribers on channel world_{event.world_id}_events")
+        except Exception as e:
+            logger.error(f"Failed to publish event to Redis: {e}", exc_info=True)
             pass # Fail gracefully if Redis is unavailable

@@ -7,17 +7,26 @@ export async function fetchWorlds() {
   return res.json();
 }
 
-export async function generateWorld() {
+export async function generateWorld(scenario?: string) {
+  const body: any = {
+    name: "New World " + Math.floor(Math.random() * 1000),
+    seed: Math.floor(Math.random() * 1000000),
+    cities: 4,
+    characters: 30,
+    factions: 4
+  };
+  if (scenario) {
+    body.scenario = scenario;
+    if (scenario === 'grain_crisis') {
+      body.name = "The Grain Crisis";
+      body.seed = 42; // deterministic seed for demo
+    }
+  }
+
   const res = await fetch(`${API_BASE}/worlds/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: "New World " + Math.floor(Math.random() * 1000),
-      seed: Math.floor(Math.random() * 1000000),
-      cities: 4,
-      characters: 30,
-      factions: 4
-    })
+    body: JSON.stringify(body)
   });
   if (!res.ok) throw new Error("Failed to generate world");
   return res.json();
